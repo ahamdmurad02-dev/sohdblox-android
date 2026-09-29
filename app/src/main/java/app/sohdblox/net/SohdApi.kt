@@ -67,18 +67,27 @@ class SohdApi(context: Context) {
     }
 
     private fun errorMessage(text: String, code: Int): String {
-        return try {
+        val raw = try {
             val obj = json.parseToJsonElement(text).jsonObject
-            obj["msg"]?.jsonPrimitive?.content ?: obj["message"]?.jsonPrimitive?.content ?: "خطأ $code"
-        } catch (_: Exception) { "خطأ $code" }
+            obj["msg"]?.jsonPrimitive?.content ?: obj["message"]?.jsonPrimitive?.content ?: text
+        } catch (_: Exception) { text }
+        val lower = raw.lowercase()
+        return when {
+            "invalid login" in lower || "invalid_grant" in lower -> "ما في حساب بهالاسم، أو كلمة المرور غلط. اضغط إنشاء حساب."
+            "already registered" in lower || "already been registered" in lower -> "هذا الاسم مستخدم. اضغط دخول أو غيّر الاسم."
+            else -> raw.ifBlank { "خطأ $code" }
+        }
     }
 
     fun signUp(user: String, password: String) {
+        if (!user.matches(Regex("^[A-Za-z][A-Za-z0-9_]{2,19}$"))) throw RuntimeException("الاسم يبدأ بحرف، من 3 إلى 20.")
+        if (password.length < 8) throw RuntimeException("كلمة المرور لازم 8 أحرف على الأقل.")
         val body = json.encodeToString(buildJsonObject {
             put("email", emailOf(user)); put("password", password)
             put("data", buildJsonObject { put("username", user); put("display_name", user) })
         })
-        saveSession(post("/auth/v1/signup", body, false), user)
+        runCatching { post("/auth/v1/signup", body, false) }
+        signIn(user, password)
     }
 
     fun signIn(user: String, password: String) {
@@ -93,7 +102,7 @@ class SohdApi(context: Context) {
         val user = obj["user"]?.jsonObject
         userId = user?.get("id")?.jsonPrimitive?.content
         username = user?.get("user_metadata")?.jsonObject?.get("username")?.jsonPrimitive?.content ?: fallbackUser
-        if (accessToken.isNullOrBlank()) throw RuntimeException("تم إنشاء الحساب. اضغط دخول.")
+        if (accessToken.isNullOrBlank()) throw RuntimeException("الحساب انحفظ. اضغط دخول.")
     }
 
     fun publishedGames(): List<GameDto> {
