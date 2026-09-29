@@ -135,8 +135,8 @@ fun SohdRoot(api: SohdApi) {
                 }
             }
             "home" -> {
-                Text("مرحبا ${'$'}{api.username ?: ""}", color = Cream, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("${'$'}ah Ah", color = Coral)
+                Text("مرحبا " + (api.username ?: ""), color = Cream, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(ah.toString() + " Ah", color = Coral)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BigBtn("ألعابي") { run { mine = api.myGames(); screen = "dev" } }
