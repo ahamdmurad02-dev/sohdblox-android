@@ -23,7 +23,6 @@ class SohdApi(context: Context) {
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
     val url = "https://jbqenbfksnpkwwrvfybl.supabase.co"
     val anon = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpicWVuYmZrc25wa3d3cnZmeWJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NzkxMjksImV4cCI6MjEwNjA1NTEyOX0.R0OOeXo4nFN3nAhvh3D8iOub_lJb4Ni7PDrjKgaljdA"
-    private val domain = "accounts.sohdblox.app"
 
     var accessToken: String?
         get() = prefs.getString("access", null)
@@ -38,7 +37,6 @@ class SohdApi(context: Context) {
         get() = prefs.getString("uid", null)
         set(v) { prefs.edit().putString("uid", v).apply() }
 
-    fun emailOf(name: String) = name.trim().lowercase() + "@" + domain
     fun signedIn() = !accessToken.isNullOrBlank()
     fun signOut() { accessToken = null; refreshToken = null; username = null; userId = null }
 
@@ -67,42 +65,44 @@ class SohdApi(context: Context) {
     }
 
     private fun errorMessage(text: String, code: Int): String {
-        val raw = try {
+        return try {
             val obj = json.parseToJsonElement(text).jsonObject
-            obj["msg"]?.jsonPrimitive?.content ?: obj["message"]?.jsonPrimitive?.content ?: text
-        } catch (_: Exception) { text }
-        val lower = raw.lowercase()
-        return when {
-            "invalid login" in lower || "invalid_grant" in lower -> "ما في حساب بهالاسم، أو كلمة المرور غلط. اضغط إنشاء حساب."
-            "already registered" in lower || "already been registered" in lower -> "هذا الاسم مستخدم. اضغط دخول أو غيّر الاسم."
-            else -> raw.ifBlank { "خطأ $code" }
-        }
+            obj["error"]?.jsonPrimitive?.content
+                ?: obj["msg"]?.jsonPrimitive?.content
+                ?: obj["message"]?.jsonPrimitive?.content
+                ?: "خطأ $code"
+        } catch (_: Exception) { "خطأ $code" }
     }
 
     fun signUp(user: String, password: String) {
-        if (!user.matches(Regex("^[A-Za-z][A-Za-z0-9_]{2,19}$"))) throw RuntimeException("الاسم يبدأ بحرف، من 3 إلى 20.")
-        if (password.length < 8) throw RuntimeException("كلمة المرور لازم 8 أحرف على الأقل.")
-        val body = json.encodeToString(buildJsonObject {
-            put("email", emailOf(user)); put("password", password)
-            put("data", buildJsonObject { put("username", user); put("display_name", user) })
-        })
-        runCatching { post("/auth/v1/signup", body, false) }
-        signIn(user, password)
+        account("signup", user, password)
     }
 
     fun signIn(user: String, password: String) {
-        val body = json.encodeToString(buildJsonObject { put("email", emailOf(user)); put("password", password) })
-        saveSession(post("/auth/v1/token?grant_type=password", body, false), user)
+        account("login", user, password)
+    }
+
+    private fun account(action: String, user: String, password: String) {
+        val name = user.trim()
+        if (!name.matches(Regex("^[A-Za-z][A-Za-z0-9_]{2,19}$"))) throw RuntimeException("الاسم يبدأ بحرف، من 3 إلى 20.")
+        if (password.length < 8) throw RuntimeException("كلمة المرور لازم 8 أحرف على الأقل.")
+        val body = json.encodeToString(buildJsonObject {
+            put("action", action)
+            put("username", name)
+            put("password", password)
+        })
+        saveSession(post("/functions/v1/account", body, false), name)
     }
 
     private fun saveSession(text: String, fallbackUser: String) {
         val obj = json.parseToJsonElement(text).jsonObject
+        if (obj["error"] != null) throw RuntimeException(obj["error"]!!.jsonPrimitive.content)
         accessToken = obj["access_token"]?.jsonPrimitive?.content
         refreshToken = obj["refresh_token"]?.jsonPrimitive?.content
         val user = obj["user"]?.jsonObject
         userId = user?.get("id")?.jsonPrimitive?.content
         username = user?.get("user_metadata")?.jsonObject?.get("username")?.jsonPrimitive?.content ?: fallbackUser
-        if (accessToken.isNullOrBlank()) throw RuntimeException("الحساب انحفظ. اضغط دخول.")
+        if (accessToken.isNullOrBlank()) throw RuntimeException("ما قدرنا نفتح الجلسة.")
     }
 
     fun publishedGames(): List<GameDto> {
